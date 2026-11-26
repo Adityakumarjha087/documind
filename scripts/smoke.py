@@ -52,9 +52,9 @@ class Client:
         r = urllib.request.Request(self.base + path, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(r, timeout=60) as resp:
-                return resp.status, dict(resp.headers), resp.read()
+                return resp.status, {k.lower(): v for k, v in resp.headers.items()}, resp.read()
         except urllib.error.HTTPError as e:
-            return e.code, dict(e.headers), e.read()
+            return e.code, {k.lower(): v for k, v in e.headers.items()}, e.read()
 
     def json(self, method: str, path: str, body: Any = None) -> tuple[int, Any]:
         code, _, data = self.req(method, path, body)
@@ -104,7 +104,7 @@ def main() -> None:
     code, _, body = api.req("GET", "/health/ready")
     check("readiness probe (db + redis)", code == 200, body.decode()[:120])
     code, headers, _ = api.req("GET", "/health")
-    check("security headers present", headers.get("X-Content-Type-Options") == "nosniff")
+    check("security headers present", headers.get("x-content-type-options") == "nosniff")
     code, _, body = api.req("GET", "/openapi.json")
     check("OpenAPI schema served", code == 200 and b'"paths"' in body)
 
