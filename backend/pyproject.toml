@@ -1,0 +1,77 @@
+[project]
+name = "documind-backend"
+version = "0.1.0"
+description = "DocuMind - enterprise RAG knowledge assistant (API + workers)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "email-validator>=2.2",
+  "sqlalchemy[asyncio]>=2.0.36",
+  "asyncpg>=0.30",
+  "psycopg[binary]>=3.2",
+  "alembic>=1.14",
+  "pgvector>=0.3.6",
+  "celery[redis]>=5.4",
+  "redis>=5.2",
+  "pyjwt>=2.10",
+  "bcrypt>=4.2",
+  "python-multipart>=0.0.17",
+  "httpx>=0.28",
+  "boto3>=1.35",
+  "pypdf>=5.1",
+  "python-docx>=1.1",
+  "beautifulsoup4>=4.12",
+  "langchain-text-splitters>=0.3",
+  "structlog>=24.4",
+  "numpy>=2.1",
+  "anthropic>=0.40",
+  "openai>=1.55",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=6.0",
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "asgi-lifespan>=2.1",
+  "respx>=0.21",
+  "reportlab>=4.2",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "SIM", "RUF"]
+ignore = ["B008", "RUF012"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+"alembic/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+exclude = ["alembic/", "tests/"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/worker.py"]
+concurrency = ["greenlet", "thread"]
