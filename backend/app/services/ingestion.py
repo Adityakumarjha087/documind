@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -93,8 +94,15 @@ async def ingest_document(sm: async_sessionmaker[AsyncSession], document_id: uui
             log.warning("ingest_failed", document_id=str(document_id), error=str(e))
 
 
-async def pending_document_ids(session: AsyncSession) -> list[uuid.UUID]:
+async def stale_queued_document_ids(
+    session: AsyncSession, older_than: timedelta = timedelta(minutes=1)
+) -> list[uuid.UUID]:
+    """Documents still 'queued' after ``older_than``: their job message was lost (e.g. broker
+    restart before the message was persisted, or a crash between commit and publish)."""
+    cutoff = datetime.now(UTC) - older_than
     rows = await session.execute(
-        select(Document.id).where(Document.status == DocumentStatus.queued)
+        select(Document.id).where(
+            Document.status == DocumentStatus.queued, Document.created_at < cutoff
+        )
     )
     return list(rows.scalars())

@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 
 import docx
+import pytest
 from httpx import AsyncClient
 from reportlab.pdfgen import canvas
 
@@ -158,3 +159,54 @@ async def test_hybrid_search_ranks_relevant_chunk(client: AsyncClient, account: 
     assert "VPN" in hits[0]["content"]
     assert hits[0]["score"] >= hits[-1]["score"]
     assert hits[0]["vector_rank"] or hits[0]["keyword_rank"]
+
+
+async def test_enqueue_failure_marks_document_failed(
+    client: AsyncClient, account: Account, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.routers import documents as docs_router
+
+    def boom(_: object) -> None:
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(docs_router, "enqueue_ingestion", boom)
+    r = await client.post(
+        f"/api/workspaces/{account.workspace_id}/documents",
+        headers=account.headers,
+        files={"file": ("a.md", b"# A\\nhello world text", "text/markdown")},
+    )
+    assert r.status_code == 202
+    doc = (
+        await client.get(
+            f"/api/workspaces/{account.workspace_id}/documents/{r.json()['id']}",
+            headers=account.headers,
+        )
+    ).json()
+    assert doc["status"] == "failed" and "re-index" in doc["error"]
+
+
+async def test_stale_queued_documents_are_found(account: Account) -> None:
+    import uuid
+    from datetime import UTC, datetime, timedelta
+
+    from app.db import get_sessionmaker
+    from app.models import Document
+    from app.services.ingestion import stale_queued_document_ids
+
+    async with get_sessionmaker()() as s:
+        old = Document(
+            workspace_id=uuid.UUID(account.workspace_id),
+            title="old",
+            source_type="txt",
+            source_uri="k",
+            created_at=datetime.now(UTC) - timedelta(minutes=5),
+        )
+        new = Document(
+            workspace_id=uuid.UUID(account.workspace_id),
+            title="new",
+            source_type="txt",
+            source_uri="k2",
+        )
+        s.add_all([old, new])
+        await s.commit()
+        assert await stale_queued_document_ids(s) == [old.id]

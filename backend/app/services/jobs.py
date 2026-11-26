@@ -12,6 +12,11 @@ from app.db import get_sessionmaker
 
 _background: set[asyncio.Task[None]] = set()
 
+# Bounded broker-publish retries: fail fast (≈5 s) instead of hanging the request when Redis is
+# unreachable. Callers turn the error into a "failed to queue" status; the worker also re-queues
+# stale "queued" documents on startup (see app.worker).
+PUBLISH_RETRY = {"max_retries": 3, "interval_start": 0, "interval_step": 0.5, "interval_max": 2}
+
 
 def _spawn(coro: Coroutine[Any, Any, None]) -> None:
     task = asyncio.get_running_loop().create_task(coro)
@@ -23,7 +28,9 @@ def enqueue_ingestion(document_id: uuid.UUID) -> None:
     if get_settings().ingestion_mode == "celery":
         from app.worker import ingest_document_task
 
-        ingest_document_task.delay(str(document_id))
+        ingest_document_task.apply_async(
+            (str(document_id),), retry=True, retry_policy=PUBLISH_RETRY
+        )
     else:
         from app.services.ingestion import ingest_document
 
@@ -34,7 +41,7 @@ def enqueue_eval(run_id: uuid.UUID) -> None:
     if get_settings().ingestion_mode == "celery":
         from app.worker import run_eval_task
 
-        run_eval_task.delay(str(run_id))
+        run_eval_task.apply_async((str(run_id),), retry=True, retry_policy=PUBLISH_RETRY)
     else:
         from app.services.evals import run_eval
 

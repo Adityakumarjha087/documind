@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.deps import MemberCtx, SessionDep
 from app.errors import Forbidden, NotFound, PayloadTooLarge
 from app.llm.factory import get_embedder
+from app.logs import get_logger
 from app.models import ROLE_RANK, Chunk, Document, DocumentStatus, Role
 from app.rag.parsing import ParseError, assert_public_url, detect_source_type
 from app.rag.rerank import get_reranker
@@ -21,6 +22,19 @@ from app.services.jobs import enqueue_ingestion
 from app.storage import get_storage
 
 router = APIRouter(prefix="/api/workspaces/{workspace_id}", tags=["documents"])
+log = get_logger(__name__)
+
+
+async def _dispatch(session: SessionDep, doc: Document) -> None:
+    """Queue ingestion; if the broker is unreachable, record a visible, retryable failure."""
+    try:
+        enqueue_ingestion(doc.id)
+    except Exception as e:
+        log.error("enqueue_failed", document_id=str(doc.id), error=str(e))
+        doc.status = DocumentStatus.failed
+        doc.error = "Could not queue ingestion (job queue unavailable). Use re-index to retry."
+        await session.commit()
+
 
 MIME = {
     "pdf": "application/pdf",
@@ -68,7 +82,7 @@ async def upload_document(
     )
     session.add(doc)
     await session.commit()
-    enqueue_ingestion(doc.id)
+    await _dispatch(session, doc)
     return doc
 
 
@@ -87,7 +101,7 @@ async def ingest_url(body: UrlIngestIn, ctx: MemberCtx, session: SessionDep) -> 
     )
     session.add(doc)
     await session.commit()
-    enqueue_ingestion(doc.id)
+    await _dispatch(session, doc)
     return doc
 
 
@@ -146,7 +160,7 @@ async def reindex_document(document_id: uuid.UUID, ctx: MemberCtx, session: Sess
     doc = await _get_doc(session, ctx, document_id)
     doc.status, doc.progress, doc.error = DocumentStatus.queued, 0, None
     await session.commit()
-    enqueue_ingestion(doc.id)
+    await _dispatch(session, doc)
     return doc
 
 

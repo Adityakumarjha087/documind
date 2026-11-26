@@ -6,6 +6,7 @@ import asyncio
 import uuid
 
 from celery import Celery
+from celery.signals import worker_ready
 
 from app.config import get_settings
 from app.logs import configure_logging
@@ -48,3 +49,22 @@ def run_eval_task(run_id: str) -> None:
     from app.services.evals import run_eval
 
     _run(lambda sm: run_eval(sm, uuid.UUID(run_id)))
+
+
+@worker_ready.connect
+def requeue_stale_documents(**_: object) -> None:
+    """Recover documents whose ingestion message was lost, so nothing stays 'queued' forever."""
+    from app.services.ingestion import stale_queued_document_ids
+
+    async def find(sm):  # type: ignore[no-untyped-def]
+        async with sm() as session:
+            return await stale_queued_document_ids(session)
+
+    ids: list[uuid.UUID] = []
+
+    async def collect(sm):  # type: ignore[no-untyped-def]
+        ids.extend(await find(sm))
+
+    _run(collect)
+    for doc_id in ids:
+        ingest_document_task.delay(str(doc_id))
