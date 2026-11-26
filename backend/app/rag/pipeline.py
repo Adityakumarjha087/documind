@@ -112,8 +112,11 @@ async def answer_question(
 
     yield {"type": "sources", "sources": citation_payload(chunks, "")}
 
-    # The standalone (rewritten) question is unambiguous without history; history is kept for tone.
-    messages = prompts.build_answer_messages(search_query, chunks, history)
+    # Answer the user's own question; the rewrite (used for retrieval) is passed as a hint so
+    # references like "those" resolve without the old topic drowning out the new one.
+    messages = prompts.build_answer_messages(
+        question, chunks, history, standalone=outcome.rewritten_query
+    )
     result = StreamResult()
     parts: list[str] = []
     async for delta in llm.stream(prompts.ANSWER_SYSTEM, messages, result):

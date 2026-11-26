@@ -11,6 +11,7 @@ import httpx
 
 from app.config import get_settings
 from app.llm.fake import keywords
+from app.llm.fake import stem as _stem
 from app.logs import get_logger
 
 log = get_logger(__name__)
@@ -27,13 +28,6 @@ class Reranker(Protocol):
     name: str
 
     async def rerank(self, query: str, candidates: list[Candidate]) -> list[float]: ...
-
-
-def _stem(w: str) -> str:
-    for suf in ("ing", "ies", "ied", "es", "ed", "ly", "s"):
-        if len(w) > len(suf) + 3 and w.endswith(suf):
-            return w[: -len(suf)]
-    return w
 
 
 class NoReranker:

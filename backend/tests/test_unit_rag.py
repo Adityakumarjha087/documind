@@ -21,7 +21,7 @@ from app.rag.evaluation import (
 )
 from app.rag.parsing import Segment
 from app.rag.pipeline import citation_payload
-from app.rag.prompts import build_answer_messages, format_sources
+from app.rag.prompts import REWRITE_SYSTEM, build_answer_messages, format_sources
 from app.rag.rerank import Candidate, LexicalReranker, NoReranker
 from app.rag.retrieval import RetrievedChunk, build_tsquery, reciprocal_rank_fusion
 
@@ -158,7 +158,7 @@ async def test_fake_llm_extractive_answer_and_rewrite() -> None:
     assert cites[0]["cited"] and not cites[1]["cited"]
 
     rw = await FakeLLM().complete(
-        "Rewrite into a standalone question",
+        REWRITE_SYSTEM,
         [
             ChatMessage(
                 "user",
@@ -215,3 +215,76 @@ def test_pricing() -> None:
 )
 def test_is_elliptical(q: str, expected: bool) -> None:
     assert is_elliptical(q) is expected
+
+
+async def test_fake_llm_drops_loosely_related_sentences_and_uses_headings() -> None:
+    chunks = [
+        _chunk("Paid Time Off\nFull-time employees accrue 21 days of paid time off per year."),
+        _chunk("Equipment\nRemote employees receive a monthly internet stipend of 50 USD."),
+        _chunk("Network\nYou must connect through the corporate VPN on public Wi-Fi networks."),
+    ]
+    answer = await FakeLLM().complete(
+        "s", build_answer_messages("How many paid time off days do employees get?", chunks, [])
+    )
+    assert "21 days" in answer and "stipend" not in answer
+    # Headings are not echoed into the answer...
+    assert "Paid Time Off Full-time" not in answer
+    # ...but still count as context: the VPN sentence never says "network".
+    answer = await FakeLLM().complete(
+        "s", build_answer_messages("What is the network policy?", chunks, [])
+    )
+    assert "VPN" in answer
+
+
+async def test_fake_llm_follow_up_prefers_users_own_words() -> None:
+    chunks = [
+        _chunk(
+            "Leave\nEmployees receive 24 days of annual leave. Unused leave expires on March 31."
+        ),
+        _chunk("Security\nLost laptops must be reported to the security desk within two hours."),
+    ]
+    msgs = build_answer_messages(
+        "and what about security?",
+        chunks,
+        [],
+        standalone="and what about security? annual days employees leave receive",
+    )
+    assert "Standalone question:" in msgs[-1].content
+    answer = await FakeLLM().complete("s", msgs)
+    assert "two hours" in answer and "24 days" not in answer
+    # A follow-up with no content words of its own falls back to the standalone context.
+    msgs = build_answer_messages("tell me more", chunks, [], standalone="tell me more annual leave")
+    assert "24 days" in await FakeLLM().complete("s", msgs)
+    # "carried" (document) matches "carry" (question).
+    carry = [_chunk("Leave\nUp to 5 unused days can be carried over into the next year.")]
+    assert "5 unused days" in await FakeLLM().complete(
+        "s", build_answer_messages("How many days can I carry over?", carry, [])
+    )
+
+
+async def test_fake_llm_rejoins_wrapped_lines_and_skips_question_headings() -> None:
+    chunks = [
+        _chunk(
+            "Paid Time Off\nUp to 5 unused days can be carried over into the next year; any\n"
+            "remaining days expire on March 31."
+        ),
+        _chunk(
+            "What is Acme Analytics?\nAcme Analytics is a self-serve BI platform for teams.",
+            "Acme Analytics Product FAQ",
+        ),
+        _chunk(
+            "Pricing Plans\nThe Starter plan costs 29 USD per user per month. The Growth plan "
+            "costs 59 USD per user per month.",
+            "Acme Analytics Product FAQ",
+        ),
+    ]
+    answer = await FakeLLM().complete(
+        "s", build_answer_messages("Which plans does Acme Analytics offer?", chunks, [])
+    )
+    # Title words ("Acme Analytics") are down-weighted, so the plan sentences lead.
+    assert answer.startswith("Based on the documents: The Starter plan")
+    assert "What is Acme Analytics?" not in answer  # question headings are context only
+    carry = await FakeLLM().complete(
+        "s", build_answer_messages("How many days can I carry over?", chunks[:1], [])
+    )
+    assert "expire on March 31." in carry  # sentence wrapped across lines stays whole

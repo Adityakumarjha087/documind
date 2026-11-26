@@ -178,7 +178,7 @@ class _FailingLLM:
         result: StreamResult,
         max_tokens: int | None = None,
     ) -> AsyncIterator[str]:
-        if "standalone" in system.lower():
+        if system.lower().startswith("rewrite the follow-up question"):
             yield "rewrite"
             return
         yield "partial "
