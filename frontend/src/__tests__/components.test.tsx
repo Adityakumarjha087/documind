@@ -106,3 +106,35 @@ describe("states", () => {
     expect(screen.getByText("42")).toBeInTheDocument();
   });
 });
+
+describe("ChatMessage security", () => {
+  it("never renders raw HTML or javascript: links from model/document text", () => {
+    const { container } = render(
+      <ChatMessage
+        message={{
+          id: "x",
+          role: "assistant",
+          content: 'Hi <script>alert(1)</script><img src=x onerror="alert(2)"> [click](javascript:alert(3))',
+          citations: [],
+          grounded: true,
+        }}
+        onCite={() => {}}
+      />,
+    );
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+    const link = container.querySelector("a");
+    expect(link?.getAttribute("href") ?? "").not.toMatch(/^javascript:/i);
+  });
+
+  it("ignores out-of-range citation markers", () => {
+    render(
+      <ChatMessage
+        message={{ id: "y", role: "assistant", content: "See [7].", citations: [citation], grounded: true }}
+        onCite={() => {}}
+      />,
+    );
+    expect(screen.getByText(/See \[7\]/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Source 7/ })).toBeNull();
+  });
+});
