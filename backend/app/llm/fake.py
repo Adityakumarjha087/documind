@@ -77,6 +77,22 @@ STOP = frozenset(
         "tell",
         "explain",
         "please",
+        "get",
+        "gets",
+        "got",
+        "give",
+        "gives",
+        "make",
+        "need",
+        "needs",
+        "want",
+        "any",
+        "some",
+        "much",
+        "there",
+        "here",
+        "also",
+        "just",
     ]
 )
 _SOURCE_BLOCK = re.compile(r"\[(\d+)\][^\n]*\n(.*?)(?=\n\[\d+\]|\n</sources>|\Z)", re.S)
@@ -84,6 +100,20 @@ _SOURCE_BLOCK = re.compile(r"\[(\d+)\][^\n]*\n(.*?)(?=\n\[\d+\]|\n</sources>|\Z)
 
 def keywords(text: str) -> set[str]:
     return {w for w in _WORD.findall(text.lower()) if w not in STOP and len(w) > 1}
+
+
+_ELLIPTICAL = re.compile(
+    r"^(and|also|what about|how about|what else|why|how so|is it|does it|can it|it|that|this|"
+    r"they|those|these|more|tell me more)\b",
+    re.I,
+)
+_PRONOUN = re.compile(r"\b(it|its|that|this|they|them|those|these|he|she|there)\b", re.I)
+
+
+def is_elliptical(question: str) -> bool:
+    """Heuristic for follow-ups that depend on prior turns ("and what about X?", "is it free?")."""
+    q = question.strip()
+    return bool(_ELLIPTICAL.match(q)) or (len(keywords(q)) <= 2 and bool(_PRONOUN.search(q)))
 
 
 def _sentences(text: str) -> list[str]:
@@ -103,6 +133,8 @@ class FakeLLM:
         if "standalone question" in system.lower():
             m = re.search(r"Follow-up question:\s*(.+)", question, re.S)
             follow = (m.group(1) if m else question).strip()
+            if not is_elliptical(follow):
+                return follow  # self-contained question / topic switch: don't inherit context
             hist = re.findall(r"user:\s*(.+)", question)
             prior = hist[-1] if hist else ""
             extra = " ".join(sorted(keywords(prior) - keywords(follow)))

@@ -23,6 +23,16 @@ def test_settings_parse_cors_csv() -> None:
     assert "+psycopg" in s.sync_database_url
 
 
+def test_settings_from_env_csv_and_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CORS_ORIGINS", "http://a.com,http://b.com")
+    monkeypatch.setenv("LLM_MODEL", "")
+    s = Settings()
+    assert s.cors_origins == ["http://a.com", "http://b.com"]
+    assert s.llm_model is None
+    monkeypatch.setenv("CORS_ORIGINS", '["http://c.com"]')
+    assert Settings().cors_origins == ["http://c.com"]
+
+
 def test_password_and_jwt() -> None:
     h = hash_password("pw-123456")
     assert verify_password("pw-123456", h) and not verify_password("x", h)

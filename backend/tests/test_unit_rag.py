@@ -7,7 +7,7 @@ import pytest
 
 from app.llm.base import ChatMessage, collect
 from app.llm.embeddings import HashEmbedder, _fit
-from app.llm.fake import FakeLLM, keywords
+from app.llm.fake import FakeLLM, is_elliptical, keywords
 from app.llm.pricing import estimate_cost
 from app.rag import parsing
 from app.rag.chunking import recursive_chunks, semantic_chunks
@@ -201,3 +201,17 @@ async def test_eval_metrics() -> None:
 def test_pricing() -> None:
     assert estimate_cost("claude-opus-5-5", 1_000_000, 0) == 4.0
     assert estimate_cost("unknown", 100, 100) == 0.0
+
+
+@pytest.mark.parametrize(
+    ("q", "expected"),
+    [
+        ("and what about security?", True),
+        ("Is it free?", True),
+        ("Tell me more", True),
+        ("Who painted the Mona Lisa?", False),
+        ("What is the parental leave policy?", False),
+    ],
+)
+def test_is_elliptical(q: str, expected: bool) -> None:
+    assert is_elliptical(q) is expected

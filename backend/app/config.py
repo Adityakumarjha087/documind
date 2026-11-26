@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 LLMProviderName = Literal["fake", "openai", "anthropic", "gemini", "ollama"]
 EmbeddingProviderName = Literal["hash", "openai", "gemini", "ollama"]
@@ -14,13 +15,15 @@ RerankerName = Literal["none", "lexical", "cohere"]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
 
     app_name: str = "DocuMind"
     environment: Literal["development", "test", "production"] = "development"
     log_level: str = "INFO"
     log_json: bool = False
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:3000"]
+    )
 
     # Database / infra
     database_url: str = "postgresql+asyncpg://documind:documind@localhost:5442/documind"
@@ -78,7 +81,9 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, v: object) -> object:
-        if isinstance(v, str) and not v.startswith("["):
+        if isinstance(v, str):
+            if v.strip().startswith("["):
+                return json.loads(v)
             return [o.strip() for o in v.split(",") if o.strip()]
         return v
 

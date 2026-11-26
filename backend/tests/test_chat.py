@@ -134,3 +134,16 @@ async def test_feedback_and_conversation_management(client: AsyncClient, account
     assert (
         await client.get(f"{base}/conversations/{conv}", headers=account.headers)
     ).status_code == 404
+
+
+async def test_topic_switch_after_history_is_not_contaminated(
+    client: AsyncClient, account: Account
+) -> None:
+    await upload(client, account)
+    conv = await new_conv(client, account)
+    await ask(
+        client, account, conv, "What equipment does the company provide for remote employees?"
+    )
+    events = await ask(client, account, conv, "Who painted the Mona Lisa?")
+    assert not [d for e, d in events if e == "rewrite"]
+    assert events[-1][1]["grounded"] is False
