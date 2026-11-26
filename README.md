@@ -85,7 +85,32 @@ sequenceDiagram
 
 ## Screenshots
 
-_Add screenshots here: Chat with citations · Source preview · Documents with live progress · Evaluation · Analytics (dark mode)._
+All screenshots are from the seeded demo workspace running in the offline mode (no API keys).
+Regenerate them with `cd frontend && node scripts/screenshots.mjs` against a running stack.
+
+**Cited answers.** Each claim links to its source chunk, and the source preview shows the exact passage.
+
+![Chat answer with inline citations and the source preview panel](docs/screenshots/chat-citations.png)
+
+**Follow-up questions.** "How many of those can I carry over?" is rewritten into a standalone search query before retrieval.
+
+![Follow-up question rewritten for retrieval](docs/screenshots/chat-follow-up.png)
+
+**Document library.** Upload files or URLs, choose a chunking strategy, and watch ingestion progress.
+
+![Document library with ingestion status](docs/screenshots/documents.png)
+
+**Evaluation.** RAGAS-style faithfulness, answer relevancy, context precision and recall per run.
+
+![Evaluation dashboard with metrics by run](docs/screenshots/evaluation.png)
+
+**Analytics.** Query volume, latency, token cost and the grounded-answer rate per workspace.
+
+![Analytics dashboard](docs/screenshots/analytics.png)
+
+**Dark mode.**
+
+![Chat in dark mode](docs/screenshots/chat-dark.png)
 
 ## Local setup
 
