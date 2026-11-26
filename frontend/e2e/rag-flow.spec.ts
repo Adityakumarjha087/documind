@@ -35,6 +35,8 @@ test("register → upload → ask → cited answer → source preview", async ({
 
   const answer = page.getByTestId("answer").last();
   await expect(answer).toContainText("75 EUR");
+  // Feedback buttons only render on the persisted message, i.e. once streaming has finished.
+  await expect(page.getByRole("button", { name: "Helpful answer", exact: true })).toHaveCount(1);
   await page.getByRole("button", { name: /^Source 1:/ }).first().click();
   await expect(page.getByTestId("source-text")).toContainText("75 EUR");
 
@@ -42,7 +44,8 @@ test("register → upload → ask → cited answer → source preview", async ({
   await page.getByLabel("Ask a question").fill("Who painted the Mona Lisa?");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.getByText("Not enough context")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Helpful answer", exact: true })).toHaveCount(2);
 
-  await page.getByRole("button", { name: "Helpful answer" }).first().click();
-  await expect(page.getByRole("button", { name: "Helpful answer" }).first()).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Helpful answer", exact: true }).first().click();
+  await expect(page.getByRole("button", { name: "Helpful answer", exact: true }).first()).toHaveAttribute("aria-pressed", "true");
 });
