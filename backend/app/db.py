@@ -26,7 +26,8 @@ _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 def get_engine() -> AsyncEngine:
     global _engine, _sessionmaker
     if _engine is None:
-        _engine = create_async_engine(get_settings().database_url, pool_pre_ping=True)
+        url, connect_args = get_settings().async_engine_args()
+        _engine = create_async_engine(url, pool_pre_ping=True, connect_args=connect_args)
         _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine
 

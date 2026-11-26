@@ -156,3 +156,28 @@ async def test_health_endpoints(client: AsyncClient) -> None:
     r = await client.get("/openapi.json")
     assert r.status_code == 200 and "/api/workspaces/{workspace_id}/search" in r.json()["paths"]
     assert "x-request-id" in {k.lower() for k in r.headers}
+
+
+def test_hosted_postgres_url_normalisation() -> None:
+    s = Settings(
+        database_url="postgresql://u:p@ep-x.neon.tech/documind?sslmode=require&channel_binding=require"
+    )
+    assert s.database_url.startswith("postgresql+asyncpg://")
+    url, args = s.async_engine_args()
+    assert "sslmode" not in url and "channel_binding" not in url
+    assert args == {"ssl": "require"}
+    assert (
+        s.sync_database_url.startswith("postgresql+psycopg://")
+        and "sslmode=require" in s.sync_database_url
+    )
+    plain = Settings(database_url="postgres://u:p@localhost:5432/db")
+    assert plain.async_engine_args() == ("postgresql+asyncpg://u:p@localhost:5432/db", {})
+
+
+def test_demo_mode_allows_fake_llm_in_production() -> None:
+    ok = Settings(
+        environment="production", jwt_secret="x" * 40, llm_provider="fake", demo_mode=True
+    )
+    assert ok.demo_mode
+    with pytest.raises(ValueError, match="fake"):
+        Settings(environment="production", jwt_secret="x" * 40, llm_provider="fake")

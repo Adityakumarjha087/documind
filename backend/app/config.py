@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -30,6 +31,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://documind:documind@localhost:5442/documind"
     redis_url: str = "redis://localhost:6389/0"
     ingestion_mode: Literal["celery", "inline"] = "celery"
+    # Public demo deployments: allow the offline fake LLM in production and seed demo data.
+    demo_mode: bool = False
 
     # Object storage (MinIO / S3). backend "local" writes to a directory instead.
     storage_backend: Literal["s3", "local"] = "s3"
@@ -79,6 +82,15 @@ class Settings(BaseSettings):
     # Guardrail: minimum reranker relevance for the best chunk to attempt an answer.
     min_relevance: float = 0.15
 
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def _async_driver(cls, v: str) -> str:
+        """Accept plain postgres:// URLs from hosting providers (Neon, Render, ...)."""
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix):
+                return "postgresql+asyncpg://" + v[len(prefix) :]
+        return v
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, v: object) -> object:
@@ -96,7 +108,7 @@ class Settings(BaseSettings):
                 problems.append("JWT_SECRET must be set to a random value of at least 32 chars")
             if any(o == "*" for o in self.cors_origins):
                 problems.append("CORS_ORIGINS must not contain '*'")
-            if self.llm_provider == "fake":
+            if self.llm_provider == "fake" and not self.demo_mode:
                 problems.append("LLM_PROVIDER=fake is for development/CI only")
             if problems:
                 raise ValueError("Unsafe production configuration: " + "; ".join(problems))
@@ -105,6 +117,19 @@ class Settings(BaseSettings):
     @property
     def sync_database_url(self) -> str:
         return self.database_url.replace("+asyncpg", "+psycopg")
+
+    def async_engine_args(self) -> tuple[str, dict[str, Any]]:
+        """asyncpg rejects libpq-only query params (sslmode, channel_binding) that hosted
+        Postgres URLs carry; strip them and pass SSL as a connect argument instead."""
+        parts = urlsplit(self.database_url)
+        query = dict(parse_qsl(parts.query))
+        sslmode = query.pop("sslmode", None)
+        query.pop("channel_binding", None)
+        url = urlunsplit(parts._replace(query=urlencode(query)))
+        connect_args: dict[str, Any] = {}
+        if sslmode in {"require", "verify-ca", "verify-full"}:
+            connect_args["ssl"] = "require" if sslmode == "require" else True
+        return url, connect_args
 
 
 @lru_cache
