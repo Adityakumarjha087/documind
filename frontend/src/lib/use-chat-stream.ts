@@ -55,7 +55,9 @@ export function useChatStream(workspaceId: string) {
         }
         if (!state.done) update({ done: true });
       } catch (e) {
-        if ((e as Error).name !== "AbortError") update({ error: (e as Error).message, done: true });
+        // A stopped or interrupted stream must still end in a "done" state so the UI never
+        // stays on "Searching…"; only real failures surface as errors.
+        update((e as Error).name === "AbortError" ? { done: true } : { error: (e as Error).message, done: true });
       }
       return state;
     },

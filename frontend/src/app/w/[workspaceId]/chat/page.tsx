@@ -25,13 +25,23 @@ const SUGGESTIONS = [
 function Chat({ workspaceId }: { workspaceId: string }) {
   const router = useRouter();
   const search = useSearchParams();
-  const conversationId = search.get("c");
+  const urlConversationId = search.get("c");
+  // A brand-new conversation is shown under its id before the URL catches up (set after the
+  // first answer streams), so the chat never blanks out in between.
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const conversationId = urlConversationId ?? pendingId;
   const qc = useQueryClient();
   const base = `/api/workspaces/${workspaceId}`;
   const [input, setInput] = useState("");
   const [source, setSource] = useState<Citation | null>(null);
   const { answer, send, reset, stop } = useChatStream(workspaceId);
   const bottom = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (urlConversationId) setPendingId(null);
+  }, [urlConversationId]);
+  // How many saved messages existed when the current question was sent; once the saved
+  // conversation holds the new question + answer, the live copy is hidden (no duplicates).
+  const savedAtSend = useRef(0);
 
   const conversations = useQuery({
     queryKey: ["conversations", workspaceId],
@@ -58,7 +68,10 @@ function Chat({ workspaceId }: { workspaceId: string }) {
     mutationFn: (id: string) => api(`${base}/conversations/${id}`, { method: "DELETE" }),
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ["conversations", workspaceId] });
-      if (id === conversationId) router.push(`/w/${workspaceId}/chat`);
+      if (id === conversationId) {
+        setPendingId(null);
+        router.push(`/w/${workspaceId}/chat`);
+      }
     },
   });
 
@@ -69,18 +82,26 @@ function Chat({ workspaceId }: { workspaceId: string }) {
     if (!question || streaming) return;
     setInput("");
     let cid = conversationId;
+    const isNew = !cid;
+    savedAtSend.current = isNew ? 0 : (detail.data?.messages.length ?? 0);
     try {
       if (!cid) {
         const conv = await api<Conversation>(`${base}/conversations`, { method: "POST", ...json({}) });
         cid = conv.id;
-        router.replace(`/w/${workspaceId}/chat?c=${cid}`);
+        setPendingId(cid);
       }
+      // Stream first; changing the URL mid-stream can re-render the page and strand the
+      // in-flight answer, so a new conversation's URL is only set once the answer is saved.
       const result = await send(cid, question);
       if (result.error) toast.error(result.error);
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["conversation", workspaceId, cid] }),
-        qc.invalidateQueries({ queryKey: ["conversations", workspaceId] }),
-      ]);
+      // Load the saved conversation before dropping the live copy, so nothing flickers.
+      await qc.fetchQuery({
+        queryKey: ["conversation", workspaceId, cid],
+        queryFn: () => api<ConversationDetail>(`${base}/conversations/${cid}`),
+        staleTime: 0,
+      });
+      await qc.invalidateQueries({ queryKey: ["conversations", workspaceId] });
+      if (isNew) router.replace(`/w/${workspaceId}/chat?c=${cid}`);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -89,7 +110,8 @@ function Chat({ workspaceId }: { workspaceId: string }) {
   }
 
   const persisted: ViewMessage[] = conversationId ? (detail.data?.messages ?? []) : [];
-  const live: ViewMessage[] = answer
+  const liveSaved = !!answer?.done && persisted.length >= savedAtSend.current + 2;
+  const live: ViewMessage[] = answer && !liveSaved
     ? [
         { id: "pending-q", role: "user", content: answer.question, citations: [], grounded: true },
         {
@@ -109,7 +131,10 @@ function Chat({ workspaceId }: { workspaceId: string }) {
     <div className="flex h-full">
       <section aria-label="Conversations" className="hidden w-64 shrink-0 flex-col border-r border-border lg:flex">
         <div className="p-3">
-          <Button className="w-full" onClick={() => router.push(`/w/${workspaceId}/chat`)}>
+          <Button className="w-full" onClick={() => {
+              setPendingId(null);
+              router.push(`/w/${workspaceId}/chat`);
+            }}>
             <MessageSquarePlus className="h-4 w-4" aria-hidden /> New chat
           </Button>
         </div>
