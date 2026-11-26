@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -52,11 +52,18 @@ async def _get_conv(
 
 
 @router.get("/conversations", response_model=list[ConversationOut])
-async def list_conversations(ctx: MemberCtx, session: SessionDep) -> list[Conversation]:
+async def list_conversations(
+    ctx: MemberCtx,
+    session: SessionDep,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[Conversation]:
     rows = await session.execute(
         select(Conversation)
         .where(Conversation.workspace_id == ctx.workspace.id, Conversation.user_id == ctx.user.id)
-        .order_by(Conversation.created_at.desc())
+        .order_by(Conversation.created_at.desc(), Conversation.id)
+        .limit(limit)
+        .offset(offset)
     )
     return list(rows.scalars())
 

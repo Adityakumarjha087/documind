@@ -111,13 +111,17 @@ async def list_documents(
     session: SessionDep,
     status_filter: Annotated[DocumentStatus | None, Query(alias="status")] = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[Document]:
     stmt = select(Document).where(Document.workspace_id == ctx.workspace.id)
     if status_filter:
         stmt = stmt.where(Document.status == status_filter)
     if q:
-        stmt = stmt.where(Document.title.ilike(f"%{q}%"))
-    return list((await session.execute(stmt.order_by(Document.created_at.desc()))).scalars())
+        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        stmt = stmt.where(Document.title.ilike(f"%{escaped}%", escape="\\"))
+    stmt = stmt.order_by(Document.created_at.desc(), Document.id).limit(limit).offset(offset)
+    return list((await session.execute(stmt)).scalars())
 
 
 async def _get_doc(session: SessionDep, ctx: MemberCtx, document_id: uuid.UUID) -> Document:

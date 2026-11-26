@@ -6,12 +6,13 @@ import json
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 LLMProviderName = Literal["fake", "openai", "anthropic", "gemini", "ollama"]
 EmbeddingProviderName = Literal["hash", "openai", "gemini", "ollama"]
 RerankerName = Literal["none", "lexical", "cohere"]
+DEFAULT_JWT_SECRET = "change-me-in-production-please-32b"
 
 
 class Settings(BaseSettings):
@@ -41,7 +42,7 @@ class Settings(BaseSettings):
     max_upload_mb: int = 25
 
     # Auth
-    jwt_secret: str = "change-me-in-production-please-32b"
+    jwt_secret: str = DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 15
     refresh_token_days: int = 14
@@ -86,6 +87,20 @@ class Settings(BaseSettings):
                 return json.loads(v)
             return [o.strip() for o in v.split(",") if o.strip()]
         return v
+
+    @model_validator(mode="after")
+    def _production_safety(self) -> Settings:
+        if self.environment == "production":
+            problems = []
+            if self.jwt_secret == DEFAULT_JWT_SECRET or len(self.jwt_secret) < 32:
+                problems.append("JWT_SECRET must be set to a random value of at least 32 chars")
+            if any(o == "*" for o in self.cors_origins):
+                problems.append("CORS_ORIGINS must not contain '*'")
+            if self.llm_provider == "fake":
+                problems.append("LLM_PROVIDER=fake is for development/CI only")
+            if problems:
+                raise ValueError("Unsafe production configuration: " + "; ".join(problems))
+        return self
 
     @property
     def sync_database_url(self) -> str:
