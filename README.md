@@ -7,6 +7,18 @@ assistant declines to answer when the documents don't cover the question.
 > try every feature with zero API keys. Switch to OpenAI, Anthropic Claude, Google Gemini or a local
 > Ollama model with one environment variable.
 
+## Live demo
+
+| | |
+|---|---|
+| **App** | [documind-liart-pi.vercel.app](https://documind-liart-pi.vercel.app) |
+| **API docs** | [documind-api-p4fe.onrender.com/docs](https://documind-api-p4fe.onrender.com/docs) |
+| **Health** | [documind-api-p4fe.onrender.com/health](https://documind-api-p4fe.onrender.com/health) |
+| **Demo login** | `demo@documind.dev` / `demo-password-123` |
+
+> Hosted on free tiers (Vercel + Render + Neon Postgres). The backend sleeps after 15 minutes idle, so the
+> first request can take about a minute — open the health link first. Demo limits: offline LLM and hash embeddings; uploaded files are kept in temporary storage.
+
 ## Features
 
 - **Multi-format ingestion**: PDF, DOCX, TXT, Markdown and web URLs. Files are parsed asynchronously
